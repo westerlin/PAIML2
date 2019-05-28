@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+   <AIML version="2.0">
+     <category>
+       <pattern>My name is *</pattern>
+       <template>
+       		<condition name="player_name">
+       			No, your name is <get name="player_name"/> .. nice trye
+       		</condition>
+       		<condition name="player_name" value="__undefined__">
+       			Ok, hi <set name="player_name"><star /></set>
+       		</condition>
+       	</template>
+     </category>
+     <category>
+       <pattern>What is my name</pattern>
+       <template>
+       	<condition name="player_name" value="__undefined__">
+       		I don't know .. you have not told me .. 
+       	</condition>
+       	<condition name="player_name">
+       		Your name is <get name="player_name"/> 
+       	</condition>
+       	</template>
+     </category>
+     <category>
+       <pattern>HI *</pattern>
+       <template>
+       		Hello world! By the way, my name is not <star />
+       	</template>
+     </category>
+     <category>
+       <pattern>Hello *</pattern>
+       <template>
+       		<srai>Hi <star /></srai>
+       	</template>
+     </category>
+     <category>
+       <pattern>How is your * *</pattern>
+       <template>
+       		Well, my <star/>ing <star index="1"/> is good, thank you.
+       </template>
+     </category>
+     <category>
+       <pattern>What is a chatbot</pattern>
+       <template>
+		A chatbot is a computer program designed to respond 
+		to text or voice inputs in natural language.
+       </template>
+     </category>
+     <category>
+       <pattern>delta *</pattern>
+       <template>
+       		<star/> testing
+       </template>
+     </category>
+     <category>
+       <pattern>my test</pattern>
+       <template>
+			<srai>COLLECTOR</srai>
+       </template>
+     </category>
+     <category>
+       <pattern>What is your name</pattern>
+       <template>
+			My name is Lucy .. 
+       </template>
+     </category>
+     <category>
+       <pattern>COLLECTOR</pattern>
+       <template>
+	       	<random>	
+	       		<li>All ends here</li>
+	       		<li>Worlds end</li>
+	       		<li>This is as far as you get</li>
+	       		<li>maximum</li>
+	       </random>
+       </template>
+     </category>
+   </AIML>

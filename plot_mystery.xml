@@ -1,0 +1,79 @@
+<definitions>
+	<set name="actors">
+		<li>Acturus</li>
+		<li>Lydia</li>
+		<li>Lucretia</li>
+		<li>Brotus</li>
+		<li>Luca</li>
+	</set>
+
+	<set name="extreme_negative">
+		<li>disgust</li>
+		<li>hate</li>
+		<li>rage</li>
+	</set>
+</definitions>
+
+<practice name="cardplay">
+	<preconditions>
+		<set name="cardplayers">practices.cardplay.participants</set>
+		<le value="5">{cardplayers}</le>
+		<li></li>
+	</preconditions>
+
+</practice>
+
+
+<!-- Spawn actions */ -->
+
+<practice label="murderscheme">
+	<preconditions>
+		<li>[actor].relation.[target].{extreme_negative}.[motive]</li>
+	</preconditions>
+
+	<action label="poison_drink">
+		<preconditions>
+			<worldstate>
+				<li>[actor].inventory.[small_container].poison</li>
+				<li>practices.[event].[drink]</li>
+				<li>practices.[event].participants.[actor]</li>
+				<li>practices.[event].participants.[target]</li>
+			<worldstate>
+			<practices>dinner_party</practices>
+		</preconditions>
+		<implications>
+			<li probability="20%" label="Success">
+				<add>practices.[event].[drink]!poisoned</add>
+				<add>[actor].murdered.[target].[motive]</add>
+				<remove>practice.murderscheme</remove>
+				<text>
+					[actor] quickly pulls out the [small_container] and slide a few drops
+					into the [target] [drink]
+				</text>
+			</li>
+			<li probability="20%" label="Partial failure">
+				<remove>[actor].inventory.[small_container]</remove>
+				<text>
+					[actor] quickly pulls out the vial but drops it onto the
+					floor where it breaks. Poison and [small_container] is lost ....
+				</text>
+			</li>
+			<li probability="40%" label="Critical failure">
+				<add>[actor].inventory.[small_container]!empty</add>
+				<add>practices.[event].foul_act_detected</add>
+				<!-- spawn a new practice-->
+				<add>practices.confrontation</add>
+				<add>practices.confrontation.accused.[target]</add>
+				<add>practices.confrontation.crime.murder</add>
+				<add>practices.confrontation.victim.[target]</add>
+				<add>practices.confrontation.method.poison</add>
+				<remove>[actor].inventory.poison</remove>
+				<!-- we don't have to remove practice as actor will still like to murder target -->
+				<text>
+					[actor] quickly pulls out the vial but is caught in the act.
+				</text>
+			</li>
+		</implications>
+
+</action>
+</practice label="murderscheme">
