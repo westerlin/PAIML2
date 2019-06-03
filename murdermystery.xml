@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<drama name="murdermystery">
+
+	<scenes>
+		<scene name="introduction">
+			<implications>
+				<text>
+					It was early morning with the sun slowly rising over the tree tops 
+					burning of morning mist. Grassy plains stretches onto the border of the 
+					forest. 
+					A hiking party was gathering in front of the old mansion.
+					<for name="parm" elements="location.barn.is_here">
+						[actors.parm.name]
+					</for>
+					There are <count elements="actors"/> actors here
+					There are <count elements="locations"/> locations here
+					[actors.lydia.name.formel] and [actors.brown.name.formel] is here.
+					[actors.lydia.name.formel] likes to be called [actors.lydia.name.nick].
+					[actors.brown.name.formel] [actors.brown.walking] to [actors.lydia.name.formel], who looks him with narrow eyes.
+				</text>
+				<spawn>
+					<practice name="hiking_trip">
+						<roles>
+							<participant>
+								<actor name="brown" />
+								<actor name="lydia" />
+							</participant>
+							<partylead />
+						</roles>
+					</practice>
+				</spawn>
+			</implications>
+		</scene>
+	</scenes>
+
+	<actors>
+		<actor name="brown">
+			<beliefs>
+			</beliefs>
+			<wants>
+			</wants>
+			<quirks>
+				<walking>
+					swaggers
+				</walking>
+				<name>
+					James
+					<formel>
+						Mr. Brown
+					</formel>
+				</name>
+			</quirks>
+		</actor>
+
+		<actor name="lydia">
+			<beliefs>
+			</beliefs>
+			<wants>
+			</wants>
+			<quirks>
+				<walking>
+					walks elegantly
+				</walking>
+				<name>
+					Lydia
+					<formel>
+						Ms. Morisson
+					</formel>
+					<nick>
+						Lyd
+					</nick>
+				</name>
+			</quirks>
+		</actor>
+
+	</actors>
+
+	<practices>
+		<practice name="hiking_trip">
+			<roles>
+				<li>participant</li>
+				<li>partylead</li>
+			</roles>
+			<spawn>
+				<add>practices.hiking_trip</add>
+				<text>The hiking trip was about to start ... </text>
+			</spawn>
+
+			<action name="walking" >
+				<precondition>
+					<and>
+						<li>practices.hiking_trip.roles.participant.[actor]</li>
+						<li>practices.hiking_trip.roles.partylead.[lead]</li>
+					</and>
+				</precondition>
+				<implications>
+					<text>
+						It works!!
+					</text>
+					<text>
+						<condition is="actors.[actor].fatigue">
+							[actor.name] [actor.walking] slowly behind the rest of the party
+						</condition>
+						<condition not="actors.[actor].fatigue">
+							[actor.name] [actor.walking] with the rest of the party
+						</condition>
+					</text> 
+					<random>
+						<li><add>actors.[actor].fatigue</add></li>
+						<li><remove>actors.[actor].fatigue</remove></li>
+					</random>
+				</implications>
+			</action>
+
+		</practice>
+	</practices>
+</drama>
