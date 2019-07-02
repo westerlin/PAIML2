@@ -13,6 +13,12 @@ def trim(text):
 			output += line + " \n"
 	return output
 
+def exchange(text,dictionary):
+	for category in dictionary.keys():
+		member = random.choice(list(dictionary.get(category)))
+		text = text.replace("["+category+"]",member)
+	return text
+
 
 class DramaParser:
 
@@ -20,10 +26,15 @@ class DramaParser:
 		self.commands = {
 			"text": self.__text,
 			"count" :self.__count,
-			"spawn" :self.__spawn
+			"spawn" :self.__spawn,
+			"add" : self.__addtag,
+			"remove" : self.__removetag,
+			"li": self.__li,
+			"condition": self.__condition,
+			"random": self.__random
 		}
 		self.drama = drama
-
+		self.roles = {}
 
 	def execute(self,node):
 		for child in node:
@@ -31,12 +42,67 @@ class DramaParser:
 			if command != None:
 				command(child)
 
+	def __random(self,node):
+		while True:
+			child = random.choice(node)
+			command = self.commands.get(child.tag)
+			if command != None:
+				return command(child)
+
+	def __addtag(self,node):
+		if node.text != "": 
+			self.drama.ws.add(self.__contextualize(node.text.strip()))
+		for child in node:
+			command = self.commands.get(child.tag)
+			if command != None:
+				result = command(child)
+				if result != "":
+					self.drama.ws.add(self.__contextualize(result.strip()))
+		return ""
+
+	def __removetag(self,node):
+		if node.text != "": 
+			self.drama.ws.remove(self.__contextualize(node.text.strip()))
+		for child in node:
+			command = self.commands.get(child.tag)
+			if command != None:
+				result = command(child)
+				if result != "":
+					self.drama.ws.remove(self.__contextualize(result.strip()))
+		return ""
+
+	def __condition(self,node):
+		attrib = node.get("is")
+		if attrib != None:
+			exists = self.drama.ws.get(self.__contextualize(attrib))
+			if exists != None:
+				return self.__li(node)
+			else:
+				return ""
+		attrib = node.get("not")
+		if attrib != None:
+			exists = self.drama.ws.get(self.__contextualize(attrib))
+			if exists == None:
+				return self.__li(node)
+			else:
+				return ""
+		return self.__li(node)
+
+	def __li(self,node):
+		output = ""
+		if node.text != None : output += node.text
+		for child in node:
+			command = self.commands.get(child.tag)
+			if command != None:
+				output += command(child)
+		return output
+
 	def __count(self,node):
 		key = node.get("elements")
 		if key != None:
-			elements = drama.root.has(key)
+			elements = drama.ws.get(key)
 			if elements != None:
-				return str(len(elements))
+				return str(len(elements.children.keys()))
 		return "none"
 
 	def __text(self,node):
@@ -49,9 +115,14 @@ class DramaParser:
 			if children.tail != None: response += children.tail
 		response = self.__contextualize(trim(response))
 		if drama != None: drama.logs.append(response)
+		return ""
+
+	def __insertRoles(self,text):
+		return exchange(text,self.roles)
 
 	def __contextualize(self,text):
 		#if self.context == None: return text
+		text = self.__insertRoles(text)
 		regex = r"\[(.*?)\]"
 		regex = r"\[actors\.(\w+)\.(.*?)\]"
 		matches = re.findall(regex,text,flags=re.IGNORECASE)
@@ -65,7 +136,14 @@ class DramaParser:
 	def __spawn(self,node):
 		for process in node.findall("practice"):
 			newprocess = self.__spawnprocess(process)
+			self.roles = {}
 			self.drama.practices[newprocess.id()] = newprocess
+			for role in newprocess.roles.keys():
+				members = newprocess.roles[role]
+				membertags = []
+				for member in members:
+					membertags.append("actors."+member.name)
+				self.roles[role] = membertags
 			newprocess.execute()
 		return ""
 
@@ -83,13 +161,17 @@ class DramaParser:
 		return newprocess
 
 
+def rotate(l):
+	l.append(l.pop(0))
+	return l
+	#return l[1:]+[l[0]]
 
 class Drama:
 
 	def __init__(self,ws=None):
 		self.actors = {}
 		self.practices = {}
-		self.root = ws
+		self.ws = ws
 		self.scenes = {}
 		self.actions = []
 		self.actors = {}
@@ -97,9 +179,11 @@ class Drama:
 		self.dramaManager = DramaParser(self)
 		self.currentScene = None
 		self.logs = []
+		self.ws.add("actors")
+		self.ws.add("practices")
 
 	def setWordState(self,state):
-		self.root = state
+		self.ws = state
 
 	def play(self):
 		if self.currentScene == None:
@@ -108,14 +192,29 @@ class Drama:
 				self.dramaManager.execute(event)
 				for log in self.logs:
 					print(log)
+			self.agentlist = list(self.actors.keys())
 		for practice_id in self.practices.keys():
 			practice = self.practices.get(practice_id)
 			practice.getAffordances()
 
 		self.logs = []
-		actorlabel = random.choice(list(self.actors.keys()))
+		#actorlabel = random.choice(list(self.actors.keys()))
+		self.agentlist = rotate(self.agentlist)
+		actorlabel = self.agentlist[0]
 		actor = self.actors.get(actorlabel)
+		self.dramaManager.roles = {}
+		self.dramaManager.roles["AGENT"] = ["actors."+actor.name]
 		action = random.choice(actor.affordances)
+		self.dramaManager.roles["PARENT"] = [action.parent.id()]
+		#print(action.parent.roles)
+		for role in action.parent.roles.keys():
+			members = action.parent.roles[role]
+			membertags = []
+			for member in members:
+				membertags.append("actors."+member.name)
+			self.dramaManager.roles[role] = membertags
+
+
 		action.execute()
 		for log in self.logs:
 			print(log)
@@ -146,10 +245,10 @@ class Drama:
 			for action in self.treeroot.findall("practices/practice/action"):
 				self.actions.append(action)
 			for actor in self.treeroot.findall("actors/actor"):
-				newactor = Actor()
+				newactor = Actor(self.ws.get("actors"))
 				newactor.load(actor)
 				self.actors[actor.get("name")] = newactor
-				self.root.add("actors."+newactor.name)
+				#self.ws.add("actors."+newactor.name)
 				#print(newactor.quirks)
 				#print(ET.tostring(action).decode())
 
@@ -163,6 +262,53 @@ class Drama:
 			value = actor.quirks[match[1]]
 			text = text.replace(key,value)
 		return text
+
+
+class Node:
+
+	def __init__(self,name="root",parent=None):
+		self.children={}
+		self.name=name
+		self.parent=parent
+
+
+	def __str__(self):
+		return self.name
+
+	def remove(self,keystring):
+		removed = self.get(keystring)
+		if removed == None : return 
+		for childlabel in removed.children.keys():
+			child = removed.children.get(childlabel)
+			child.remove(childlabel)
+		removed = None
+
+	def add(self,keystring):
+		keys = keystring.split(".")
+		#print("ADDING: ", keystring)
+		self.__add(keys)
+
+	def __add(self,keys):
+		child = self.children.get(keys[0])
+		if child == None:
+			child = Node(keys[0],self)
+			self.children[keys[0]] = child
+		if len(keys)>1:
+			child.__add(keys[1:])
+
+	def get(self,keystring):
+		keys = keystring.split(".")
+		return self.__get(keys)
+
+	def __get(self,keys):
+		child = self.children.get(keys[0])
+		if child != None:
+			if len(keys)>1:
+				return child.__get(keys[1:])
+			else:
+				return child
+		return None
+
 
 
 class WorldState:
@@ -212,7 +358,7 @@ class SocialPractice:
 			members = self.roles.get(role)
 			for member in members:
 				for action in self.root.findall("action"):
-					member.affordances.append(Action(action,self.drama))
+					member.affordances.append(Action(action,self))
 
 	def addRole(self,role,actor):
 		rolekey = self.roles.get(role)
@@ -237,15 +383,17 @@ class SocialPractice:
 
 class Actor:
 
-	def __init__(self):
+	def __init__(self,ws=Node()):
 		self.beliefs = []
 		self.wants = []
 		self.quirks = {}
 		self.name = "Nameless"
+		self.ws = ws
 		self.affordances = []
 
 	def load(self,branch):
 		self.name = branch.get("name")
+		self.ws.add(self.name)
 		for quirks in branch.findall("quirks"):
 			for quirk in quirks:
 				self.__getquirk(quirk)
@@ -258,11 +406,12 @@ class Actor:
 
 class Action:
 
-	def __init__(self, node=None, drama=None):
+	def __init__(self, node=None, practice=None):
 		self.preconditions = {}
 		self.root = node
-		self.drama = drama
-		self.parser = drama.dramaManager
+		self.drama = practice.drama
+		self.parser = practice.drama.dramaManager
+		self.parent = practice
 
 	def execute(self):
 		for event in self.root.findall("implications"):
@@ -288,12 +437,27 @@ def test(filename):
 	return utopia
 
 
+
+myroot = Node()
+myroot.add("locations.castle")
+myroot.add("locations.dungeon")
+myroot.add("locations.forest")
+print(myroot.get("locations.forest"))
+print(myroot.get("locations"))
+
 RW.cls()
-drama = Drama(test("utopia.json"))
+drama = Drama(myroot)
 drama.load("murdermystery.xml")
 drama.play()
+drama.play()
+drama.play()
+drama.play()
+drama.play()
 
-regex = r"\[actors\.(\w+)\.(.*?)\]"
-test_str = "It was early morning with the sun slowly rising over the tree tops burning of morning mist. Grassy plains stretches onto the border of the forest. A hiking party was gathering in front of the old mansion. [actors.lydia.name.formel] and [actors.brown.name.formel] is here."
-matches = re.findall(regex,test_str,flags=re.MULTILINE | re.DOTALL)
+#regex = r"\[actors\.(\w+)\.(.*?)\]"
+#test_str = "It was early morning with the sun slowly rising over the tree tops burning of morning mist. Grassy plains stretches onto the border of the forest. A hiking party was gathering in front of the old mansion. [actors.lydia.name.formel] and [actors.brown.name.formel] is here."
+#matches = re.findall(regex,test_str,flags=re.MULTILINE | re.DOTALL)
 #print(matches)
+
+
+#print(myroot.get("actors.brown"))
