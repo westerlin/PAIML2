@@ -13,14 +13,6 @@ def implement(command,world):
 		#print("\t"*4,"removing:",parm)
 	return world
 
-def populate(path,parms):
-	adjusted = ""
-	while path != adjusted:
-		adjusted = path
-		for key,item in parms.items():
-			adjusted = path
-			path = adjusted.replace("["+key+"]",item)
-	return path
 
 class Action:
 
