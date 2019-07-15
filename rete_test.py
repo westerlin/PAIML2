@@ -21,10 +21,6 @@ rete.root.output()
 
 cls()
 
-rule = Rule("Test Age",["actors.[Player].age.[Age]","actors.[Player].gender.female"])
-rete.addRule(rule)
-rule = Rule("Test Fighter",["actors.[Player].gender.[female]","actors.[Player].fighter","actors.[Player].noble.[title]"])
-rete.addRule(rule)
 #print("rule added")
 
 #print("fact added")
@@ -53,10 +49,16 @@ rete.addFact("actors.lucy.age.22")
 #rete.removeFact("actors.beata")
 #rete.addFact("actors!rasmus")
 #rete.addFact("actors.lucy.noble!baroness")
+rule = Rule("Test Age",["actors.[Player].age.[Age]","actors.[Player].gender.female"])
+rete.addRule(rule)
+print("----")
+rule = Rule("Test Fighter",["actors.[Player].gender.[female]","actors.[Player].fighter","actors.[Player].noble.[title]"])
+rete.addRule(rule)
+rete.addFact("actors!rasmus")
 
 rete.output()
 
-#rete.root.output()
+rete.root.output()
 
 if 1==0:
 	rete.addFact("actors.lucy.age.22")

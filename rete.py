@@ -102,6 +102,12 @@ class TokenGroup:
 		self.conditions = [token]
 		self.params = {**token.params}
 
+	def samePath(self,otherTG):
+		for condition in otherTG.conditions:
+			if self.conditions[0].samePath(condition): 
+				return True
+		return False
+
 	def key(self):
 		hash_tuple = []
 		for condition in self.conditions:
@@ -135,40 +141,39 @@ class BetaNode:
 		self.buckets = [{},{}]
 		self.betas = []
 		self.rule = None
-		self.signals = []
+		self.signals = {}
 		self.blocks = []
+		self.level = -1
 
 	def removeTokenGroup(self,idx,revokeTG):
 		#self.buckets[idx].pop(newTG.key())
-		print("Removing",revokeTG)
+		print("   "*self.level," (%d) Removing:"%self.level,revokeTG)
 		for bucket in self.buckets:
 			deletions = []
 			for key,TG in bucket.items():
-				"""
-					I NEED TO DO SOME COMPARISION HERE ON PATH
-					BUT WITHOUT PUNCTUATIONS
-				"""
-				for condition in TG.conditions:
-					if revokeTG.conditions[0].samePath(condition): 
-						print("  - found one for deletion:",TG)
-						deletions.append((key,TG))
+				if revokeTG.samePath(TG): 
+					print("  - found one for deletion:",TG)
+					deletions.append((key,TG))
 			for TGkey,TG in deletions:
 				test = bucket.get(TGkey)
 				if test != None:
 					bucket.pop(TGkey)
-			deletions = []
-			for TG in self.signals:
-				for condition in TG.conditions:
-					if revokeTG.conditions[0].samePath(condition): 
-						deletions.append(TG)
-			deletions = list(set(deletions))
-			for TG in deletions:
-				self.signals.remove(TG)
-				if self.rule != None : self.rule.revoke(TG)
+		deletions = {}
+		for key,TG in self.signals.items():
+			if revokeTG.samePath(TG): 
+				deletions[key]=TG
+		#deletions = list(set(deletions))
+		for key,TG in deletions.items():
+			print("   "*self.level,"Revoking tokengroup:\n\t",key,"\n\t",TG)
+			self.signals.pop(key)
+			if self.rule != None : 
+				self.rule.revoke(TG)
+				print("   "*self.level,"remove rule at layer",self.level)
 		for (idx,beta) in self.betas:
 			beta.removeTokenGroup(idx,revokeTG)
 
 	def addTokenGroup(self,idx,newTG):
+		print("   "*self.level," (%d) Adding:" %self.level,newTG)
 		self.buckets[idx][newTG.key()] = newTG
 		for lKey,leftTG in self.buckets[0].items():
 			for rKey, rightTG in self.buckets[1].items():
@@ -178,10 +183,11 @@ class BetaNode:
 					if outTG != None:
 						leftTG.posted = True
 						rightTG.posted = True
-						self.signals.append(outTG)
-						for (idx,beta) in self.betas:
-							beta.addTokenGroup(idx,outTG)
-						if self.rule != None : self.rule.fire(outTG)
+						if outTG.key() not in self.signals.keys():
+							self.signals[outTG.key()]=outTG
+							for (idx,beta) in self.betas:
+								beta.addTokenGroup(idx,outTG)
+							if self.rule != None : self.rule.fire(outTG)
 					else:
 						self.blocks.append((leftTG,rightTG))
 
@@ -199,7 +205,7 @@ class BetaNode:
 				print(" "*5," (+):",str(tokengroup))
 			idx += 1
 		print("  (+) Signals:")
-		for tokengroup in self.signals:
+		for key,tokengroup in self.signals.items():
 			if tokengroup.posted:
 				print(" "*5," (+):",str(tokengroup))
 		print("  (+) Blockings:")
@@ -340,6 +346,13 @@ class ReteNode:
 				return False
 		return True
 
+	def runBeta(self):
+		for key,token in self.tokens.items():
+			for (idx,beta) in self.betas:
+				newTG = TokenGroup()
+				newTG.addToken(token,idx)
+				beta.addTokenGroup(idx,newTG) 
+
 	def addToken(self,token,adding=True,cutoff=None):
 		#print(tokenkey,self.tokens)
 		dublicate = copy.deepcopy(token)
@@ -437,14 +450,20 @@ class ReteEngine:
 			self.rules.append(rule)
 		#self.betas.append(beta)
 		prev = conditions[0]
+		level =0
 		for condition in conditions:
 			if condition != conditions[0]:
 				beta = BetaNode()
+				beta.level = level
 				condition.betas.append((1,beta))
 				prev.betas.append((0,beta))
 				prev = beta
 				self.betas.append(beta)
+				level += 1
+		print(" (-) ADDED %d level(s) til rule %s" %(level,rule.label))
 		beta.rule = rule
+		for condition in conditions:
+			condition.runBeta()
 
 	def addCondition(self,condition):
 		pattern = r'([\.|\!|\^]?)([\[|\{|\()]?[\w|\*]+[\]|\}|\)]?)'
@@ -468,4 +487,3 @@ class ReteEngine:
 		tg = self.conflictset[rulelabel].get(tokengroup.key())
 		if tg != None:		
 			self.conflictset[rulelabel].pop(tokengroup.key())
-		
