@@ -34,35 +34,39 @@ def isVarPath(path):
 		pattern = r'^([\.|\!|\?|\^]?[\[|\{|\()]?\w+[\]|\}|\)]?)+$'
 		return re.match(pattern,path)
 
-def createRanking(ws,prefix,ranking):
+def createRanking(prefix,ranking):
+	output = []
 	for rank1 in range(len(ranking)):
 		for rank2 in range(len(ranking)):
 			if rank1 < rank2:
-				ws.add(prefix+ranking[rank1]+".less."+ranking[rank2])
+				output.append(prefix+ranking[rank1]+".less."+ranking[rank2])
 			if rank1 == rank2:
-				ws.add(prefix+ranking[rank1]+".equal."+ranking[rank2])
+				output.append(prefix+ranking[rank1]+".equal."+ranking[rank2])
 			if rank1 <= rank2:
-				ws.add(prefix+ranking[rank1]+".less_or_equal."+ranking[rank2])
-	return ws
+				output.append(prefix+ranking[rank1]+".less_or_equal."+ranking[rank2])
+	return output
 
-def createCycle(ws,prefix,elements):
+def createCycle(prefix,elements):
+	output = []
 	for idx in range(len(elements)):
 		if idx > 0:
-			ws.add(prefix+elements[idx-1]+".next."+elements[idx])
-	ws.add(prefix+"."+elements[len(elements)-1]+".next."+elements[0])
-	return ws
+			output.append(prefix+elements[idx-1]+".next."+elements[idx])
+	output.append(prefix+"."+elements[len(elements)-1]+".next."+elements[0])
+	return output
 
-def createList(ws,prefix,elements):
+def createList(prefix,elements):
+	output = []
 	for element in elements:
-		ws.add(prefix+element)
-	return ws
+		output.append(prefix+element)
+	return output
 
-def createDifference(ws,prefix,elements):
+def createDifference(prefix,elements):
+	output = []
 	for element in elements:
 		for other in elements:
 			if element != other:
-				ws.add(prefix+element+"."+other)
-	return ws
+				output.append(prefix+element+"."+other)
+	return output
 
 def populate(path,parms):
 	adjusted = ""
@@ -94,6 +98,22 @@ class Node:
 			self.children = {key:child}
 		return child
 
+	def match(self,initpath):
+		node = self.get(initpath)
+		if node != None:
+			paths = []
+			for key,child in node.children.items():
+				paths += child.__match()
+			return [initpath+"."+path for path in paths]
+		return []
+
+	def __match(self):
+		output = [self.name]
+		for key,child in self.children.items():
+			branches = child.__match()
+			for branch in branches:
+				output.append(self.name+"."+branch)
+		return output 
 
 	def combi(self,keystring,prescenes=None):
 		outscenes = []
@@ -200,6 +220,10 @@ class Node:
 				return True
 		return False
 
+
+	def addList(self,branches):
+		for branch in branches:
+			self.add(branch)
 
 	def add(self,keystring):
 		pattern = r'([\.|\!]?)([\[|\{|\()]?[\w|\+|\-]+[\]|\}|\)]?)'

@@ -1,6 +1,16 @@
 import re
 from node import *
-import copy
+#import copy
+from rwutility import *
+
+debugging = False
+
+def setDebugging(debugFlag):
+	debugging = debugFlag
+
+def replaceAliases(text):
+	pattern = r'([\[][^\]]*[\]])'
+	return re.sub(pattern,"*",text)
 
 def mergeParameters(d1,d2):
 	output = d1.copy()
@@ -23,12 +33,25 @@ class Token:
 	def __repr__(self):
 		return self.path#+","+str(self.params)
 
+	def copy(self):
+		newToken = Token(self.path)
+		newToken.params = {**self.params}
+		return newToken
+
+	def cutOff(self,levels):
+		newPath = ""
+		for level in range(levels):
+			newPath += self.branches[level][0]+self.branches[level][1]
+		newToken = Token(newPath)
+		newToken.params = {**self.params}
+		return newToken
+
 	def __split(self,path):
-		pattern = r'([\.|\!|\^]?)([\w|\*]+)'
+		pattern = r'([\.|\!|\^]?)([\w|\*|\[|\]]+)'
 		return re.findall(pattern,path)
 
 	def label(self,level):
-		if level >= len(self.branches): return None
+		#if level >= len(self.branches): return None
 		return self.branches[level][1]
 
 	""" Create parameters when token wanders """
@@ -38,15 +61,29 @@ class Token:
 			self.params[key] = self.label(level)
 			#print("created:",key,self.params)
 			return True
-		elif param == key:
+		elif param == self.label(level):
 			#print("DID find:",key,param,self.params)
 			return True
 		#print("DID not find:",key,param,self.params)
 		return False
 
-	def samePath(self,token):
-		keyMin = min(len(self.key),len(token.key))
-		return self.path[:keyMin] == token.path[:keyMin]
+	def samePath(self,token,keyMin=-1):
+		if keyMin < 0 : keyMin = min(len(self.branches),len(token.branches))	
+		for idx in range(keyMin):
+			if self.branches[idx][1] != token.branches[idx][1] and token.branches[idx][1] != "*":
+				return False
+		return True
+		#return self.key[:keyMin] == token.key[:keyMin]
+
+	def applyParams(self,params):
+		#print("Changing::",self.path)
+		self.path = populate(self.path,params)
+		self.path = replaceAliases(self.path)
+		self.branches = self.__split(self.path)
+		self.key = "".join([key for (tag,key) in self.branches])
+		#print("  To:",self.path)
+		#print("    Branches:",self.branches)
+		#print("    key:",self.key)
 
 
 """
@@ -71,18 +108,25 @@ class Rule:
 		self.active = False
 		self.fired = False #for one time
 		self.rete = reteEngine
+		self.betas = []
 
 	def fire(self,tokengroup):
 		if self.rete != None: self.rete.fire(self.label,tokengroup)
-		print("Rule %s was activated" %self.label)
+		if debugging : print(RAWU_FCGREEN,"Rule %s was activated" %self.label,RAWU_RESET)
 		for condition in self.LHS:
-			print(" "*5,"(+):",populate(condition,tokengroup.params))
+			if debugging : print(" "*5,"(+):",populate(condition,tokengroup.params))
 
 	def revoke(self,tokengroup):
 		if self.rete != None: self.rete.revoke(self.label,tokengroup)
-		print("Rule %s was revoked" %self.label)
+		if debugging : print(RAWU_FCRED,"Rule %s was revoked" %self.label,RAWU_RESET)
 		for condition in self.LHS:
-			print(" "*5,"(+):",populate(condition,tokengroup.params))
+			if debugging : print(" "*5,"(+):",populate(condition,tokengroup.params))
+
+	def output(self):
+		print(RAWU_FCYELLOW,"\n Rule %s:" % self.label.capitalize(),RAWU_RESET)
+		for beta in self.betas:
+			beta.output()
+
 
 class TokenGroup:
 
@@ -91,11 +135,21 @@ class TokenGroup:
 		self.conditions = []
 		self.params = {}
 		self.posted = False
+		self.can_be_posted = True
 
 	def __str__(self):
 		sign = "(-)"
 		if self.posted: sign = "(+)"
 		return sign+": "+str(self.conditions)+" "+str(self.params)
+
+	def output(self,inset=1):
+		sign = "(-)"
+		if self.posted: sign = "(+)"
+		print(RAWU_RESET," "*inset,sign,str(self.params),RAWU_DIM)
+		for condition in self.conditions:
+			print(" "*(inset+2),"(*)",str(condition))
+		print(RAWU_RESET,end="")
+
 
 	def addToken(self,token,idx):
 		#self.conditions[idx] = token.path
@@ -104,6 +158,14 @@ class TokenGroup:
 
 	def samePath(self,otherTG):
 		for condition in otherTG.conditions:
+			#print(condition.key)
+
+			#OtherTG skal fortolkes via PARAMS
+			#condition.key = populate(condition.key,self.params)
+			#for key,branch in condition.branches:
+			#	branch = populate(branch,self.params)
+			
+			#print(condition.key)
 			if self.conditions[0].samePath(condition): 
 				return True
 		return False
@@ -121,7 +183,20 @@ class TokenGroup:
 		mergeTG.params = mergeParameters(self.params, tokenGroup.params)
 		if mergeTG.params == None : return None
 		#mergeTG.conditions = list(set(self.conditions + tokenGroup.conditions))
-		mergeTG.conditions = self.conditions + tokenGroup.conditions
+
+		for condition in self.conditions:
+			newToken = condition.copy()
+			newToken.applyParams(mergeTG.params)
+			#print(";;;;;",newToken)
+			mergeTG.conditions.append(newToken)
+		for condition in tokenGroup.conditions:
+			newToken = condition.copy()
+			newToken.applyParams(mergeTG.params)
+			#print(";;;;;",newToken)
+			mergeTG.conditions.append(newToken)
+
+
+		#mergeTG.conditions = self.conditions + tokenGroup.conditions
 		#mergeTG.conditions = self.conditions + tokenGroup.conditions
 		"""
 		mergeTG.conditions = self.conditions.copy()
@@ -131,8 +206,8 @@ class TokenGroup:
 			else:
 				mergeTG.conditions[k]=v
 		"""
-		self.posted = True
-		mergeTG.posted = True
+		#self.posted = self.can_be_posted
+		#mergeTG.posted = mergeTG.can_be_posted
 		return mergeTG
 
 class BetaNode:
@@ -144,15 +219,35 @@ class BetaNode:
 		self.signals = {}
 		self.blocks = []
 		self.level = -1
+		self.negation = [False,False]
 
-	def removeTokenGroup(self,idx,revokeTG):
+	def setNegation(self,idx,path):
+		if path[0] == "^":
+			#path = replaceAliases(path)
+			self.negation[idx] = True
+			token = Token(path[1:])
+			tokengroup = TokenGroup()
+			tokengroup.addToken(token,idx)
+			tokengroup.can_be_posted = False
+			self.buckets[idx][tokengroup.key()]=tokengroup
+			if debugging : print(RAWU_DIM,"  "*self.level," (-) Added negation:",idx,path,RAWU_RESET)
+
+	def removeTokenGroup(self,idx,revokeTG,switch=True):
 		#self.buckets[idx].pop(newTG.key())
-		print("   "*self.level," (%d) Removing:"%self.level,revokeTG)
+		if self.negation[idx] and switch: 
+			if debugging : print(RAWU_FCGREEN," (%d,%d) Remove tokengroup - but switching" %(idx,self.level),RAWU_RESET)
+			self.addTokenGroup(idx,revokeTG,False)
+			return None
+		if debugging : 
+			print(RAWU_FCRED,"   "*self.level," (%d) Removing tokengroup:"%self.level,RAWU_RESET)
+			revokeTG.output(3*self.level+2)
 		for bucket in self.buckets:
 			deletions = []
 			for key,TG in bucket.items():
 				if revokeTG.samePath(TG): 
-					print("  - found one for deletion:",TG)
+					if debugging : 
+						print(RAWU_FCRED,"   "*self.level," (%d) Found one for deletion:"%self.level,RAWU_RESET)
+						TG.output(self.level*3+2)
 					deletions.append((key,TG))
 			for TGkey,TG in deletions:
 				test = bucket.get(TGkey)
@@ -164,16 +259,28 @@ class BetaNode:
 				deletions[key]=TG
 		#deletions = list(set(deletions))
 		for key,TG in deletions.items():
-			print("   "*self.level,"Revoking tokengroup:\n\t",key,"\n\t",TG)
-			self.signals.pop(key)
+			if debugging : 
+				print(RAWU_FCRED,"   "*(self.level),"    (-) Revoking Signal tokengroup:",hex(key),RAWU_RESET)
+				#TG.output(5+self.level*3)
+				#print("END OF REVOKE")
+			#print("   "*self.level,"SIGNALPOPPING:",key)
+			popped = self.signals.pop(key)
+			if debugging: popped.output(5+self.level*2)
 			if self.rule != None : 
 				self.rule.revoke(TG)
-				print("   "*self.level,"remove rule at layer",self.level)
+				if debugging : print(RAWU_FCRED,"   "*self.level,"remove rule at layer",self.level,RAWU_RESET)
 		for (idx,beta) in self.betas:
 			beta.removeTokenGroup(idx,revokeTG)
 
-	def addTokenGroup(self,idx,newTG):
-		print("   "*self.level," (%d) Adding:" %self.level,newTG)
+	def addTokenGroup(self,idx,newTG,switch=True):
+		if self.negation[idx] and switch: 
+			if debugging : print(RAWU_FCYELLOW," (bckt:%d,lvl:%d) Adding tokengroup - but switching" %(idx,self.level),RAWU_BOLD)
+			self.removeTokenGroup(idx,newTG,False)
+			return None
+		if debugging : 
+			print(RAWU_FCGREEN,"   "*self.level," (%d) Adding tokengroup:" %self.level,RAWU_RESET)
+			newTG.output(self.level*3+3)
+		#newTG.posted = False
 		self.buckets[idx][newTG.key()] = newTG
 		for lKey,leftTG in self.buckets[0].items():
 			for rKey, rightTG in self.buckets[1].items():
@@ -181,124 +288,54 @@ class BetaNode:
 #				for rKey, rightTG in self.buckets[1].items():
 					outTG = leftTG.merge(rightTG)
 					if outTG != None:
-						leftTG.posted = True
-						rightTG.posted = True
+						leftTG.posted = leftTG.can_be_posted
+						rightTG.posted = rightTG.can_be_posted
 						if outTG.key() not in self.signals.keys():
 							self.signals[outTG.key()]=outTG
 							for (idx,beta) in self.betas:
 								beta.addTokenGroup(idx,outTG)
 							if self.rule != None : self.rule.fire(outTG)
+						else:
+							if False:
+								print(RAWU_FCRED," Level %d"%self.level,"ERROR - signal already exposed.",RAWU_RESET)
+								outTG.output(5)
+								print(" "*4,"Composed of:")
+								leftTG.output(5)
+								print(" "*7,"was posted",leftTG.posted)
+								rightTG.output(5)
+								print(" "*7,"was posted",rightTG.posted)
 					else:
 						self.blocks.append((leftTG,rightTG))
 
 	def output(self):
 		idx = 1
-		print("  -----------oooooOOOOOooooo-----------")
+		#print("  -----------oooooOOOOOooooo-----------")
 
 		if self.rule != None:
-			print("(+) BetaNode for rule %s" % self.rule.label.capitalize())
+			print(RAWU_FCYELLOW," (+) BetaNode for rule %s" % self.rule.label.capitalize(),RAWU_RESET)
 		else:
-			print("(+) BetaNode ")
+			print(RAWU_FCYELLOW," (+) BetaNode ",RAWU_RESET)
 		for bucket in self.buckets:
-			print("  (+) %d Bucket:" %(idx))
+			print(RAWU_BOLD,"   (+) %d Bucket:" %(idx),RAWU_RESET)
 			for key,tokengroup in bucket.items():
-				print(" "*5," (+):",str(tokengroup))
+				tokengroup.output(4)
+				#print(" "*4,str(tokengroup))
 			idx += 1
-		print("  (+) Signals:")
+		print(RAWU_BOLD,"   (+) Signals:",RAWU_RESET)
 		for key,tokengroup in self.signals.items():
 			if tokengroup.posted:
-				print(" "*5," (+):",str(tokengroup))
-		print("  (+) Blockings:")
-		for block in self.blocks:
-			print("   (X) Block")
-			for tokengroup in block:
-				print(" "*5," (+):",str(tokengroup))
-		print("  -----------oooooOOOOOooooo-----------")
-
-class BetaNode1:
-
-	def __init__(self,rule=None):
-		self.sockets = []
-		self.tokenGroups = []#[{"set":{}}]
-		self.rule = rule
-		self.actives = []
-
-	def addsocket(self,socket):
-		self.sockets.append(socket)
-
-
-	def addToken(self,token,socket):
-		idx = self.sockets.index(socket)
-		print("\tRECEIVED:",token,token.params)
-		#print("firing token %d" %idx,token)
-		addOns = []
-		flag = False
-		#print("MERGING:",token.params,"for",len(self.tokenGroups),".")
-		group = {idx:token,"set":{**token.params}}
-		self.tokenGroups.append(group)
-		for group in self.tokenGroups:
-			#condition = group.get(idx)
-			#if condition != None:
-			#	group = {**group}
-			#	addOns.append(group)
-			mset = mergeParameters(token.params,group.get("set"))
-			#print("mset:",mset)
-			if mset != None:
-				flag = True
-				#print(". WAS MERGED FOR:",group.get("set"))
-				group[idx]=token
-				group["set"]=mset
-			else:
-				pass
-				#group = {idx:token,"set":{**token.params}}
-				#addOns.append(group)
-
-		#self.tokenGroups += addOns
+				tokengroup.output(4)
+				#print(" "*4,str(tokengroup))
 		if False:
-			group = {idx:token,"set":{**token.params}}
-			#print("COULD NOT MERGE - NEW",group)
-			self.tokenGroups.append(group)
-		#addOns.append(group)
+			print(RAWU_BOLD,"  (+) Blockings:",RAWU_RESET)
+			for block in self.blocks:
+				print("   (X) Block")
+				for tokengroup in block:
+					tokengroup.output(5)
+			#print("  -----------oooooOOOOOooooo-----------")
+		print()
 
-		for group in self.tokenGroups:
-			if (len(group)-1) == len(self.sockets):
-				#print(group)
-				#print(self.sockets)
-				if self.rule != None: self.rule.fire(group["set"])
-				self.actives.append(group)
-				#print(self.actives)
-
-		#self.tokenGroups += addOns
-		#for tokenGroup in self.tokenGroups:
-		#	print(tokenGroup)
-
-	def removeToken(self,token,socket):
-		idx = self.sockets.index(socket)
-		removals = []
-		for group in self.tokenGroups:
-			tokenD = group.get(idx)
-			if token.samePath(tokenD):
-				group.pop(idx)
-				if len(group): removals.append(group)
-		for group in removals:
-			self.tokenGroups.remove(group)
-		
-
-	def output(self):
-		idx = 0
-		print("  -----------oooooOOOOOooooo-----------")
-
-		print("(+) BetaNode for rule %s" % self.rule.label.capitalize())
-		for tokengroup in self.tokenGroups:
-			print(" "*2,"(+) Group %d" %idx,"("+str(len(self.sockets)==len(tokengroup)-1)	+")")
-			print(" "*5," ( ):",tokengroup["set"])
-			for key,token in tokengroup.items():
-				if key != "set":
-					print(" "*5," (%d):"%key,token)
-			idx += 1
-		print("  -----------oooooOOOOOooooo-----------")
-
-class ReteNode:
+class AlphaNode:
 
 	# A Rete node is a link in an condition
 	## A chain of Rete Nodes represents a condition
@@ -312,37 +349,90 @@ class ReteNode:
 		self.tokens = {} # Collects tokens - for each rule
 		self.betas = []
 		self.alias = None
-		self.level = 0
+		self.level = -1
 		self.tag = tag
 		self.key = label
+		self.backup = None
+
+	def backupBegin(self):
+		self.backup = []
+		for key,child in self.children.items():
+			child.backupBegin()
 
 
-	def removeToken(self,token,leafNode=None):
-		deleteTokens = [key for key,dtoken in self.tokens.items() if token.samePath(dtoken)]
-		for tokenkey in deleteTokens:
-			deletedToken = self.tokens.pop(tokenkey)
-			for (idx,beta) in self.betas:
-				newTG = TokenGroup()
-				newTG.addToken(token,idx)
-				beta.removeTokenGroup(idx,newTG) 
+	def unique(self,token,tag):
+		if tag == "!":
+			cutToken = token.cutOff(self.level)
+			return [dtoken for key,dtoken in self.tokens.items() if cutToken.samePath(dtoken)]
+		return []
+
+	def removeToken3(self,token):
+		flag = False
+		if self.level < len(token.branches):
+			if self.level == -1:
+				flag = True
+			elif self.alias != None:
+				flag = token.addParam(self.alias,self.level)
+			elif self.label == token.label(self.level):
+				flag = True
+			else:
+				flag = False
+		if not flag:
+			deleteTokens = [dtoken for key,dtoken in self.tokens.items() if token.samePath(dtoken)]
+			for dtoken in deleteTokens:
+				self.__removeToken(dtoken)
 		for key,child in self.children.items():
 			child.removeToken(token)
-		return None
 
-	def __removeall(self):
+	def removeToken(self,token):
+		deleteTokens = [dtoken for key,dtoken in self.tokens.items() if token.samePath(dtoken)]
+
+		for dtoken in deleteTokens:
+			self.__removeToken(dtoken)
 		for key,child in self.children.items():
-			child.__removeall()
-			child.tokens = {}
+			child.removeToken(token)
+			unique = self.unique(token,child.tag)
+			if len(unique)<=1: 
+				for aToken in unique:
+					self.tokens.pop(aToken.key)
+					if child.alias != None:
+						if aToken.addParam(child.alias,child.level):
+							child.__addToken(aToken)
+					else:
+						child.__addToken(aToken)
 
-	def compare(self,token):
+	def removeToken2(self,token):
+		deleteTokens = [dtoken for key,dtoken in self.tokens.items() if token.samePath(dtoken)]
+		for dtoken in deleteTokens:
+			self.__removeToken(dtoken)
+		return deleteTokens
+
+	def __removeToken(self,token):
+		#print(token.key,self.tokens,self.level)
+		self.tokens.pop(token.key)
+		for (idx,beta) in self.betas:
+			newTG = TokenGroup()
+			newTG.addToken(token,idx)
+			beta.removeTokenGroup(idx,newTG) 
+
+	def __removeToken_addOn(self,token):
+		for key,child in self.children.items():
+			child.removeToken(token)
+			unique = self.unique(token,child.tag)
+			if len(unique)<=1: 
+				for aToken in unique:
+					self.tokens.pop(aToken.key)
+					if child.alias != None:
+						if aToken.addParam(child.alias,child.level):
+							child.__addToken(aToken)
+					else:
+						child.__addToken(aToken)
+
+	def hasToken(self,token):
+		# Verifies that token has same Key as other tokens
 		for key,otoken in self.tokens.items():
-			"""
-			if not token.samePath(otoken) : 
-				print(otoken.path,token.path)
-				return False
-			"""
-			if token.label(self.level-1) != otoken.label(self.level-1) : 
-				print(token.label(self.level-1) ,"vs" ,otoken.label(self.level-1)  )
+			#if token.label(self.level-1) != otoken.label(self.level-1) : 
+			if token.label(self.level) != otoken.label(self.level): 
 				return False
 		return True
 
@@ -353,10 +443,87 @@ class ReteNode:
 				newTG.addToken(token,idx)
 				beta.addTokenGroup(idx,newTG) 
 
-	def addToken(self,token,adding=True,cutoff=None):
+
+	def addToken(self,token):
+		#Verifies that token path is not surpassed
+		unqiue = []
+		flag = False
+		if self.level < len(token.branches):
+			#print(self.level,len(token.branches))
+			unique = self.unique(token,self.tag)
+			if len(unique)>0:
+				for dtoken in unique:
+					self.__removeToken(dtoken)
+			else:
+				if self.alias != None:
+					# If paramter node 
+					# Adding any parameter to alias
+					token = token.copy()
+					if token.addParam(self.alias,self.level):
+						self.__addToken(token)
+						#flag = True
+						return True,unique
+				if self.level == -1:
+					# Top node
+					self.__addToken(token)
+					#flag = True
+					return True,unique
+				if self.label == token.label(self.level):
+					# Alternatively if key matches
+					token = token.copy()
+					self.__addToken(token)
+					#flag = True
+					return True,unique
+		return flag,unique
+
+	def __addToken(self,token):
+		#Ensure that unique paths are unique
+		#if self.tag == "!":
+		#	cutToken = token.cuffOff(self.level)
+		#	deletions = self.removeToken(cutToken)
+		#	if len(deletions)>0: return deletions
+		#Add token to token register
+		#self.tokens[token.key]=token
+		#Activate any beta nodes
+		for (idx,beta) in self.betas:
+			newTG = TokenGroup()
+			newTG.addToken(token,idx)
+			beta.addTokenGroup(idx,newTG) 
+		#Add tokenss for any children
+		added = False
+		for key,child in self.children.items():
+			#newtoken = token.copy()
+			result,deleted = child.addToken(token)
+			for delete in deleted:
+				if child.alias != None and False:
+					delete.params.pop(child.alias)
+				self.tokens[delete.key]=delete
+			added = added or result
+		if not added:
+			self.tokens[token.key]=token
+
+	def __addToken2(self,token):
+		#Ensure that unique paths are unique
+		#if self.tag == "!":
+		#	cutToken = token.cuffOff(self.level)
+		#	deletions = self.removeToken(cutToken)
+		#	if len(deletions)>0: return deletions
+		#Add token to token register
+		self.tokens[token.key]=token
+		#Activate any beta nodes
+		for (idx,beta) in self.betas:
+			newTG = TokenGroup()
+			newTG.addToken(token,idx)
+			beta.addTokenGroup(idx,newTG) 
+		#Add tokenss for any children
+		added = False
+		for key,child in self.children.items():
+			child.addToken(token)
+
+	def addToken2(self,token,adding=True,cutoff=None):
 		#print(tokenkey,self.tokens)
-		dublicate = copy.deepcopy(token)
-		if self.tag == "!" and not self.compare(token):
+		dublicate = token.copy()
+		if self.tag == "!" and not self.hasToken(token):
 			self.__removeall()
 			self.tokens = {}
 			return self
@@ -370,13 +537,13 @@ class ReteNode:
 				beta.addTokenGroup(idx,newTG) 
 		tokenkey = token.label(self.level)
 		if tokenkey != None: 
+			#We are not at the end - still branches to consider
 			for key,child in self.children.items():
-				token = copy.deepcopy(dublicate)
-				#if child.alias != None:
-				#	print("checking",key)
-				# Central check
+				token = dublicate.copy()
+				# Central check: is there a match?
 				if tokenkey == key:
 					child.addToken(token,adding)
+				# is there an Alias	
 				if child.alias != None:
 					#print(" (%d) ALIAS:" %self.level,child.alias,key,adding)
 					if token.addParam(key[1:-1],self.level):
@@ -390,29 +557,34 @@ class ReteNode:
 		#print(tag,key)
 		child = self.children.get(key)
 		if child == None : 
-			child = ReteNode(key,tag)
+			child = AlphaNode(key,tag)
 			parampattern = r'^([\[|\{\(]\w+[\]|\}\)])$'
 			child.level = self.level+1
 			if re.match(parampattern,key): child.alias=key[1:-1] #cuts front an back
 			self.children[key] = child
 			#print("adding",key)
 			for key,token in self.tokens.items():
-				self.addToken(token)
+				child.addToken(token)
 		if len(keys)>1:
 			return child.addCondition(keys[1:])
 		else:
 			return child
 
 	def output(self):
+		print("\n Current Alpha Node Structure:")
+		print(" -----------------------------")
+		self.__output()
+
+	def __output(self):
 		output=""
 		for key,token in self.tokens.items():
 			output += str(token) + " "
-		print("   "*self.level,"(+)",self.label,"\t(tokens:",len(self.tokens),"outputs:",len(self.betas),")")
+		print(RAWU_FCYELLOW,"   "*self.level,"(+)",self.label,"  (tokens:",len(self.tokens),"outputs:",len(self.betas),"children:",len(self.children),")",RAWU_RESET)
 		for key,token in self.tokens.items():
-			print("   "*(self.level+1),"   -",str(token),str(token.params))
+			print(RAWU_DIM,"   "*(self.level+1),"   -",str(token),str(token.params),RAWU_RESET)
 
 		for (key,child) in self.children.items():
-			child.output()
+			child.__output()
 
 
 class ReteEngine:
@@ -420,49 +592,79 @@ class ReteEngine:
 	def __init__(self):
 		self.rules = []
 		self.facts = []
-		self.root = ReteNode()
+		self.root = AlphaNode()
+		self.facts = Node()
 		self.betas = []
 		self.conflictset = {}
+		self.backup = []
+
+	def backupBegin(self):
+		self.backup = []
+
+	def backupRevert(self):
+		stepback = self.backup[::-1]
+		for (cmd,path) in stepback:
+			print(":::",cmd,path)
+			if cmd == "add":
+				self.addFact(path)
+			if cmd == "remove":
+				self.removeFact(path)
+		self.backup=[]
 
 	def addFact(self,fact):
-		print("  (+) adding:",fact)
+		if debugging : print(RAWU_FCCYAN,"(+) Adding token:",fact,RAWU_RESET)
 		cleanPath = fact.split("!")
 		if len(cleanPath)>1:
 			token = Token(cleanPath[0])
 			self.root.removeToken(token)
+			patterns = self.facts.match(cleanPath[0])
+			#her skal vi har retur af deleted
+			for pattern in patterns:
+				self.backup.append(("add",pattern))
 		token = Token(fact)
+		self.facts.add(fact)
 		self.root.addToken(token)
+		self.backup.append(("remove",token.path))
 
 	def removeFact(self,fact):
+		if debugging : print(RAWU_FCMAGENTA,"(-) Removing token:",fact,RAWU_RESET)
 		token = Token(fact)
 		self.root.removeToken(token)
+		self.facts.remove(fact)
+		self.backup.append(("remove",token.path))
 
 	def addRule(self,rule):
 		#beta = BetaNode(rule)
 		rule.rete = self
 		self.conflictset[rule.label]={}
 		conditions = []
+		if debugging : print(RAWU_FCYELLOW,"(+) Added %d conditions for rule %s" %(len(rule.LHS),rule.label),RAWU_RESET)
 		for path in rule.LHS:
 			condition = self.addCondition(path)
 			#beta.addsocket(condition)
 			#condition.betas.append(beta)
-			conditions.append(condition)
-			self.rules.append(rule)
+			conditions.append((path,condition))
+		self.rules.append(rule)
 		#self.betas.append(beta)
-		prev = conditions[0]
+		prev = conditions[0][1]
 		level =0
-		for condition in conditions:
-			if condition != conditions[0]:
-				beta = BetaNode()
+		beta = BetaNode()
+		beta.setNegation(0,conditions[0][0])
+		for (path,condition) in conditions:
+			if condition != conditions[0][1]:
+				#beta = BetaNode()
+				beta.setNegation(1,path)
 				beta.level = level
 				condition.betas.append((1,beta))
 				prev.betas.append((0,beta))
 				prev = beta
 				self.betas.append(beta)
+				rule.betas.append(beta)
 				level += 1
-		print(" (-) ADDED %d level(s) til rule %s" %(level,rule.label))
+				if condition != conditions[-1][1]: beta = BetaNode()
+		if debugging : print(RAWU_DIM,"  (-) Added %d level(s) til rule %s" %(level,rule.label),RAWU_RESET)
 		beta.rule = rule
-		for condition in conditions:
+		for (path,condition) in conditions:
 			condition.runBeta()
 
 	def addCondition(self,condition):
@@ -471,12 +673,19 @@ class ReteEngine:
 		return self.root.addCondition(keys)
 
 	def output(self):
-		print("\n Rules in conflict set:")
-		print(" ----------------------")
+		print(RAWU_FCYELLOW,"\n Rules in conflict set:")
+		print(" ----------------------",RAWU_RESET)
 		for rule,tokengroups in self.conflictset.items():
 			print("  Rule: ",rule.capitalize())
+			print(RAWU_DIM,end="")
 			for key, tokengroup in tokengroups.items():
-				print("\t",tokengroup)
+				tokengroup.output(4)
+			print(RAWU_RESET,end="")
+		if debugging:
+			print("\n Rules:")
+			print(" ----------------------")
+			for rule in self.rules:
+				rule.output()
 		#for beta in self.betas:
 		#	if beta.rule != None and 1==1 : beta.output()
 

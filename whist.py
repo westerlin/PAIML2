@@ -12,13 +12,13 @@ suits = ["Spades","Hearts","Clubs","Diamonds"]
 cls()
 
 ws = Node()
-ws = createRanking(ws,"cards_ranking.",cards_ranking)
-ws = createCycle(ws,"game.playorder.",players)
-ws = createList(ws,"game.players.",players)
-ws = createList(ws,"suits.",suits)
-ws = createList(ws,"ranks.",cards_ranking)
-ws = createList(ws,"",pronouns)
-ws = createDifference(ws,"difference.",players)
+ws.addList(createRanking("cards_ranking.",cards_ranking))
+ws.addList(createCycle("game.playorder.",players))
+ws.addList(createList("game.players.",players))
+ws.addList(createList("suits.",suits))
+ws.addList(createList("ranks.",cards_ranking))
+ws.addList(createList("",pronouns))
+ws.addList(createDifference("difference.",players))
 
 ws.add("game.players.Albert.gender!male")
 ws.add("game.players.Beata.gender!female")
@@ -109,7 +109,7 @@ print("Welcome to the Whist card game... \n")
 flag = "Preparation"
 while flag!="":
 	flag = ruleset.execute(flag)
-	time.sleep(.25)
+	time.sleep(.45)
 
 print("\ngame ended ...bye for now")
 
