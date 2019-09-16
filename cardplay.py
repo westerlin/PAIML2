@@ -214,8 +214,8 @@ ruleset.addRule("Setting player hands empty",
 					("add","game.hands.[player].card1!None"),
 					("add","game.hands.[player].card2!None"),
 					("add","game.hands.[player].card3!None"),
-					("add","game.hands.[player].card4!None")
-					("add","game.players.[player].cards.empty"),
+					("add","game.hands.[player].card4!None"),
+					("add","game.players.[player].cards.empty")
 				])
 
 ruleset.addRule("Prepare for dealing cards",
@@ -240,7 +240,7 @@ ptn=''
 """ptn!=rw_ENTER and"""
 flag = True
 while ptn!=rw_ESC and flag:
-	flag = ruleset.execute()
+	flag = ruleset.execute_base()
 	if flag:
 		ptn = userinput.get()
 

@@ -84,6 +84,10 @@ class Node:
 		self.children={}
 		self.name=name
 		self.parent=parent
+		if name=="root":
+			self.undoRegister=[]
+		else:
+			self.undoRegister=parent.undoRegister
 
 	def __str__(self):
 		return self.name
@@ -91,14 +95,30 @@ class Node:
 	def __repr__(self):
 		return str(self)
 
-	def __addChild(self,child,key,tag):
-		child = Node(key,self)
-		self.children[key] = child
-		if tag == "!":
-			self.children = {key:child}
-		return child
+	def path(self):
+		if self.parent != None:
+			return self.parent.path() + "." + self.name
+		else:
+			return self.name
+
+	def backup(self):
+		self.undoRegister.clear()
+
+	def backupRevert(self):
+		stepback = self.undoRegister[::-1]
+		for (cmd,path) in stepback:
+			print(":::",cmd,path)
+			if cmd == "add":
+				self.add(path.replace("root.",""))
+			if cmd == "remove":
+				self.delete(path.replace("root.",""))
+		self.undoRegister.clear()
+
 
 	def match(self,initpath):
+		# returns all paths below init path
+		# in a list. Usable to understand 
+		# all the paths deleted.
 		node = self.get(initpath)
 		if node != None:
 			paths = []
@@ -134,7 +154,14 @@ class Node:
 			flag,newscenes = self.__xcombi(keys,scenes,scene)
 			outscenes += newscenes
 			#print(keys,newscenes,flag)
-		return outscenes
+		# MAKING VALUES UNIQUE
+		# SO MACRO VARS CANNOT HAVE THE SAME VALUES	
+		tmp = []
+		for outscene in outscenes:
+			uniqueValues = list(set([x for k,x in outscene.items()]))
+			if len(uniqueValues) == len(outscene.keys()):
+				tmp.append(outscene)
+		return tmp
 
 	def __xcombi(self,keys,scenes,scene=None):
 		flag = True
@@ -179,22 +206,43 @@ class Node:
 				return False,scenes
 		return flag,scenes
 
-	def output(self):
+	def output(self,keywords=None):
 		level = 0
-		self.__output(level)
+		self.__output(level,keywords)
 
-	def __output(self,level):
-		print("   "*level,self.name)
+	def hasInBranch(self,keywords):
+		if keywords != None:
+			for keyword in keywords:
+				if self.name == keyword : return True
+			for (key,child) in self.children.items():
+				if child.hasInBranch(keywords) : return True
+		else:
+			return True
+
+	def __output(self,level,keywords=None):
+		if self.hasInBranch(keywords) : print("   "*level,self.name)
 		level += 1
+		if keywords != None:
+			if self.name in keywords:
+				keywords = None
 		for (key,child) in self.children.items():
-			child.__output(level)
+			outtext = child.__output(level,keywords)
 
 	def remove(self,keystring):
+		patterns = self.match(keystring)
+		for pattern in patterns:
+			self.undoRegister.append(("add",self.path()+"."+pattern))
+		self.undoRegister.append(("add",self.path()+"."+keystring))
+		self.__remove(keystring)
+
+	def __remove(self,keystring):
+		# Removal used by RETE
+		# first We zoom into one which is going to be deleted
 		removed = self.get(keystring)
 		if removed == None : return 
 		for childlabel in removed.children.keys():
 			child = removed.children.get(childlabel)
-			child.remove(childlabel)
+			child.__remove(childlabel)
 		removed.children = {}	
 		removed = None
 
@@ -226,6 +274,13 @@ class Node:
 			self.add(branch)
 
 	def add(self,keystring):
+		cleanPath = keystring.split("!")
+		if len(cleanPath)>1:
+			patterns = self.match(cleanPath[0])
+			for pattern in patterns:
+				self.undoRegister.append(("add",self.path()+"."+pattern))
+		self.undoRegister.append(("remove",self.path()+"."+keystring))
+
 		pattern = r'([\.|\!]?)([\[|\{|\()]?[\w|\+|\-]+[\]|\}|\)]?)'
 		keys = re.findall(pattern,keystring)
 		#keys = keystring.split(".")
@@ -240,6 +295,13 @@ class Node:
 			child = self.__addChild(child,key,tag)
 		if len(keys)>1:
 			return child.__add(keys[1:])
+		return child
+
+	def __addChild(self,child,key,tag):
+		child = Node(key,self)
+		self.children[key] = child
+		if tag == "!":
+			self.children = {key:child}
 		return child
 
 	def get(self,keystring):

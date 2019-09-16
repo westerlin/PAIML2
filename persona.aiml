@@ -4,7 +4,7 @@
        <pattern>My name is *</pattern>
        <template>
        		<condition name="player_name">
-       			No, your name is <get name="player_name"/> .. nice trye
+       			No, your name is <get name="player_name"/> .. nice try!
        		</condition>
        		<condition name="player_name" value="__undefined__">
        			Ok, hi <set name="player_name"><star /></set>
@@ -23,7 +23,7 @@
        	</template>
      </category>
      <category>
-       <pattern>HI *</pattern>
+       <pattern>Hi *</pattern>
        <template>
        		Hello world! By the way, my name is not <star />
        	</template>

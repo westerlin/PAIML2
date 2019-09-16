@@ -109,6 +109,7 @@ class Rule:
 		self.fired = False #for one time
 		self.rete = reteEngine
 		self.betas = []
+		self.singleton = True
 
 	def fire(self,tokengroup):
 		if self.rete != None: self.rete.fire(self.label,tokengroup)
@@ -630,8 +631,16 @@ class ReteEngine:
 		if debugging : print(RAWU_FCMAGENTA,"(-) Removing token:",fact,RAWU_RESET)
 		token = Token(fact)
 		self.root.removeToken(token)
+		#her får vi retur af deleted
+		patterns = self.facts.match(fact)
+		for pattern in patterns:
+			self.backup.append(("add",pattern))
 		self.facts.remove(fact)
-		self.backup.append(("remove",token.path))
+		# hmmm !!! Her stod tidligere 'remove'
+		#   - bør være 'add' og ikke 'remove'
+		# og for alle de under-paths der 
+		# skæres bort (se ovenfor)
+		self.backup.append(("add",token.path))
 
 	def addRule(self,rule):
 		#beta = BetaNode(rule)
@@ -696,3 +705,4 @@ class ReteEngine:
 		tg = self.conflictset[rulelabel].get(tokengroup.key())
 		if tg != None:		
 			self.conflictset[rulelabel].pop(tokengroup.key())
+

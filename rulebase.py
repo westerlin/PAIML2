@@ -279,7 +279,7 @@ class Rules:
 		return True
 
 
-	def execute2(self):
+	def execute_base(self):
 		rules = {}
 		for generic in self.generics:
 			rules = zipzap(rules,generic.spawnrules(self.ws))
